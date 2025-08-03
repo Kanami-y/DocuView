@@ -1,5 +1,6 @@
 # DocuView
 DocuView is a simple management system and PDF viewer that also features basic Python programming capabilities.
+建议2k分辨率以上优先使用docuview-2k.py
 
 \*\*DocuView - 全能文档管理套件\*\*  
 
