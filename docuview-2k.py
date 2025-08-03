@@ -134,6 +134,7 @@ class EnhancedTextViewer:
         self.auto_save_interval = 300000  # 5分钟（毫秒）
         self.auto_save_thread = None
         self.auto_save_running = True
+        self.auto_save_event = threading.Event()  # 新增
         self.start_auto_save()
 
     def create_header(self):
@@ -584,8 +585,8 @@ class EnhancedTextViewer:
                                 font=("Segoe UI", 11), justify=tk.LEFT)
             desc_label.pack(anchor="w", pady=2)
             
-            # 添加悬停效果
-            card_bg.bind("<Enter>", lambda e, cb=card_bg: cb.configure(bg=self.lighter_color(card["color"])))
+            # 添加悬停效果（修正闭包问题）
+            card_bg.bind("<Enter>", lambda e, cb=card_bg, c=card["color"]: cb.configure(bg=self.lighter_color(c)))
             card_bg.bind("<Leave>", lambda e, cb=card_bg, c=card["color"]: cb.configure(bg=c))
         
         # 设置列权重
@@ -1451,7 +1452,7 @@ class EnhancedTextViewer:
         if not hasattr(self, 'text_viewer') or not self.text_viewer.winfo_ismapped():
             messagebox.showinfo("提示", "请先选择一个分类或文件")
             return
-            
+        
         self.search_term = self.search_entry.get().strip()
         if not self.search_term:
             messagebox.showinfo("提示", "请输入搜索内容")
@@ -1994,22 +1995,31 @@ class EnhancedTextViewer:
     def load_snippets(self):
         """从文件加载代码片段"""
         config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "snippets.json")
-        
         # 如果配置文件不存在，则创建空字典
         if not os.path.exists(config_path):
             self.snippets = {}
             return
-        
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 self.snippets = json.load(f)
         except Exception as e:
             print(f"加载代码片段失败: {str(e)}")
             self.snippets = {}
+
+    def toggle_auto_save(self):
+        """切换自动保存开关"""
+        self.auto_save_enabled = self.auto_save_var.get()
+        if self.auto_save_enabled:
+            self.start_auto_save()
+            self.status_var.set("自动保存已启用")
+        else:
+            self.stop_auto_save()
+            self.status_var.set("自动保存已关闭")
     
     def start_auto_save(self):
         """启动自动保存线程"""
         if self.auto_save_thread is None or not self.auto_save_thread.is_alive():
+            self.auto_save_event.clear()  # 新增
             self.auto_save_thread = threading.Thread(target=self.auto_save, daemon=True)
             self.auto_save_running = True
             self.auto_save_thread.start()
@@ -2018,23 +2028,15 @@ class EnhancedTextViewer:
     def stop_auto_save(self):
         """停止自动保存"""
         self.auto_save_running = False
+        self.auto_save_event.set()  # 新增，唤醒线程
         if self.auto_save_thread and self.auto_save_thread.is_alive():
             self.auto_save_thread.join(timeout=2.0)
-    
-    def toggle_auto_save(self):
-        """切换自动保存状态"""
-        self.auto_save_enabled = self.auto_save_var.get()
-        if self.auto_save_enabled:
-            self.start_auto_save()
-        else:
-            self.status_var.set("自动保存已禁用")
     
     def auto_save(self):
         """自动保存当前内容"""
         while self.auto_save_running and self.auto_save_enabled:
-            # 等待指定的时间间隔
-            time.sleep(self.auto_save_interval / 1000)
-            
+            # 等待指定的时间间隔，期间可被唤醒
+            self.auto_save_event.wait(self.auto_save_interval / 1000)
             if not self.auto_save_running or not self.auto_save_enabled:
                 break
                 
